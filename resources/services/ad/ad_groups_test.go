@@ -1,27 +1,29 @@
-package ad_test
+package ad
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"testing"
-
-	"github.com/cloudquery/cq-provider-msgraph/resources/provider"
-	"github.com/cloudquery/cq-provider-msgraph/resources/services/ad"
-
-	"github.com/cloudquery/faker/v3"
-
-	"github.com/cloudquery/cq-provider-msgraph/client"
+	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/amanenk/cq-provider-msgraph/client"
+	"github.com/amanenk/cq-provider-msgraph/client/services/mocks"
 	"github.com/cloudquery/cq-provider-sdk/logging"
+	"github.com/cloudquery/cq-provider-sdk/provider"
 	"github.com/cloudquery/cq-provider-sdk/provider/schema"
 	providertest "github.com/cloudquery/cq-provider-sdk/provider/testing"
+	"github.com/cloudquery/faker/v3"
+	"github.com/golang/mock/gomock"
 	"github.com/hashicorp/go-hclog"
 	"github.com/julienschmidt/httprouter"
+	azureAuth "github.com/microsoft/kiota/authentication/go/azure"
+	microsoftgraph "github.com/microsoftgraph/msgraph-sdk-go"
+	"github.com/microsoftgraph/msgraph-sdk-go/groups"
 	msgraph "github.com/yaegashi/msgraph.go/v1.0"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
 
-func createADGroupsTestServer(t *testing.T) (*msgraph.GraphServiceRequestBuilder, error) {
+func createADGroupsTestServer(t *testing.T) (*client.Services, error) {
 	mux := httprouter.New()
 	mux.GET("/v1.0/groups", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		groups := []msgraph.Group{
@@ -51,11 +53,30 @@ func createADGroupsTestServer(t *testing.T) (*msgraph.GraphServiceRequestBuilder
 		}
 	})
 
+	cred, err := azidentity.NewClientSecretCredential(
+		"test",
+		"test",
+		"test",
+		nil,
+	)
+	if err != nil {
+		fmt.Printf("Error creating credentials: %v\n", err)
+	}
+
+	auth, err := azureAuth.NewAzureIdentityAuthenticationProvider(cred)
+	if err != nil {
+		return nil, err
+	}
+
+	adapter, err := microsoftgraph.NewGraphRequestAdapter(auth)
+	if err != nil {
+		return nil, err
+	}
+
 	ts := httptest.NewTLSServer(mux)
-	u, _ := url.Parse(ts.URL)
-	client := client.CreateTestClient(u.Host)
-	svc := msgraph.NewClient(&client)
-	return svc, nil
+	adapter.SetBaseUrl(ts.URL)
+	services := client.InitServices(adapter)
+	return services, nil
 }
 
 func fakeGroup(t *testing.T) *msgraph.Group {
@@ -183,22 +204,61 @@ func fakeConversation(t *testing.T) msgraph.Conversation {
 	return e
 }
 
-func TestADGroups(t *testing.T) {
-	resource := providertest.ResourceTestData{
-		Table:  ad.Groups(),
-		Config: client.Config{
-			//Subscriptions: []string{"testProject"},
-		},
-		Configure: func(logger hclog.Logger, _ interface{}) (schema.ClientMeta, error) {
-			graph, err := createADGroupsTestServer(t)
-			if err != nil {
-				return nil, err
-			}
-			c := client.NewMsgraphClient(logging.New(&hclog.LoggerOptions{
-				Level: hclog.Warn,
-			}), client.TestTenantId, graph)
-			return c, nil
-		},
+func buildAdGroupsMock(t *testing.T, ctrl *gomock.Controller) client.Services {
+	m := mocks.NewMockGroupsClient(ctrl)
+
+	services := client.Services{
+		Groups: m,
 	}
-	providertest.TestResource(t, provider.Provider, resource)
+	groups := groups.GroupsResponse{}
+
+	if err := faker.FakeData(&groups); err != nil {
+		t.Fatal(err)
+	}
+	m.EXPECT().Get(gomock.Any()).Return(
+		&groups,
+		nil,
+	)
+
+	return services
+}
+
+//
+//func TestADGroups(t *testing.T) {
+//	client.MsgraphMockTestHelper(t, AdGroups(), buildAdGroupsMock, client.TestOptions{})
+//}
+
+func TestADGroups(t *testing.T) {
+	ADGroupsHelper(t, AdGroups(), createADGroupsTestServer, client.TestOptions{})
+}
+
+func ADGroupsHelper(t *testing.T, table *schema.Table, builder func(*testing.T) (*client.Services, error), options client.TestOptions) { //todo add example config
+	cfg := ""
+	providertest.TestResource(t, providertest.ResourceTestCase{
+		Provider: &provider.Provider{
+			Name:    "msgraph_mock_test_provider",
+			Version: "development",
+			Configure: func(logger hclog.Logger, i interface{}) (schema.ClientMeta, error) {
+				services, err := builder(t)
+				if err != nil {
+					t.Fatal(err)
+				}
+				c := client.NewMsgraphClient(logging.New(&hclog.LoggerOptions{
+					Level: hclog.Warn,
+				}), "testTenant", services)
+
+				return c, nil
+			},
+			ResourceMap: map[string]*schema.Table{
+				"test_resource": table,
+			},
+			Config: func() provider.Config {
+				return &client.Config{}
+			},
+		},
+		Table:          table,
+		Config:         cfg,
+		SkipEmptyJsonB: options.SkipEmptyJsonB,
+	})
+
 }

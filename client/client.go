@@ -1,27 +1,33 @@
 package client
 
 import (
-	"context"
-
+	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
+	"github.com/amanenk/cq-provider-msgraph/client/services"
 	"github.com/cloudquery/cq-provider-sdk/provider/schema"
 	"github.com/hashicorp/go-hclog"
-	"github.com/yaegashi/msgraph.go/msauth"
-	msgraph "github.com/yaegashi/msgraph.go/v1.0"
-	"golang.org/x/oauth2"
+	abstractions "github.com/microsoft/kiota/abstractions/go"
+	azureAuth "github.com/microsoft/kiota/authentication/go/azure"
+	microsoftgraph "github.com/microsoftgraph/msgraph-sdk-go"
 )
 
 type Client struct {
-	Graph    *msgraph.GraphServiceRequestBuilder
 	logger   hclog.Logger
 	TenantId string
+	Adapter  *microsoftgraph.GraphRequestAdapter
+	Services *Services
 }
 
-func NewMsgraphClient(log hclog.Logger, tenantId string, graph *msgraph.GraphServiceRequestBuilder) *Client {
+type Services struct {
+	Groups services.GroupsClient
+}
+
+func NewMsgraphClient(log hclog.Logger, tenantId string, services *Services) *Client {
 	return &Client{
 		logger:   log,
 		TenantId: tenantId,
-		Graph:    graph,
+		Services: services,
 	}
 }
 
@@ -40,19 +46,37 @@ func Configure(logger hclog.Logger, config interface{}) (schema.ClientMeta, erro
 		return nil, err
 	}
 
-	ctx := context.Background()
-	m := msauth.NewManager()
-	scopes := []string{msauth.DefaultMSGraphScope}
-	ts, err := m.ClientCredentialsGrant(ctx, c.TenantID, c.ClientID, c.ClientSecret, scopes)
+	cred, err := azidentity.NewClientSecretCredential(
+		c.TenantID,
+		c.ClientID,
+		c.ClientSecret,
+		nil,
+	)
+	if err != nil {
+		fmt.Printf("Error creating credentials: %v\n", err)
+	}
+
+	auth, err := azureAuth.NewAzureIdentityAuthenticationProvider(cred)
 	if err != nil {
 		return nil, err
 	}
 
-	httpClient := oauth2.NewClient(ctx, ts)
-	graphClient := msgraph.NewClient(httpClient)
+	adapter, err := microsoftgraph.NewGraphRequestAdapter(auth)
+	if err != nil {
+		return nil, err
+	}
 
-	client := NewMsgraphClient(logger, c.TenantID, graphClient)
+	services := InitServices(adapter)
+	client := NewMsgraphClient(logger, c.TenantID, services)
+	client.Adapter = adapter
 
 	// Return the initialized client. It will be passed to your resources
 	return client, nil
+}
+
+func InitServices(requestAdapter abstractions.RequestAdapter) *Services {
+	graphClient := microsoftgraph.NewGraphServiceClient(requestAdapter)
+	return &Services{
+		Groups: graphClient.Groups(),
+	}
 }

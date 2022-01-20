@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/cloudquery/cq-provider-msgraph/resources/provider"
+	"github.com/amanenk/cq-provider-msgraph/resources/provider"
 	"io/ioutil"
 	"os"
 	"path"

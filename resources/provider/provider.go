@@ -3,10 +3,10 @@ package provider
 import (
 	"embed"
 
-	"github.com/cloudquery/cq-provider-msgraph/resources/services/ad"
+	"github.com/amanenk/cq-provider-msgraph/resources/services/ad"
 
 	// CHANGEME: change the following to your own package
-	"github.com/cloudquery/cq-provider-msgraph/client"
+	"github.com/amanenk/cq-provider-msgraph/client"
 
 	"github.com/cloudquery/cq-provider-sdk/provider"
 	"github.com/cloudquery/cq-provider-sdk/provider/schema"
@@ -25,9 +25,7 @@ func Provider() *provider.Provider {
 		Configure:  client.Configure,
 		Migrations: azureMigrations,
 		ResourceMap: map[string]*schema.Table{
-			"ad.applications": ad.Applications(),
-			"ad.groups":       ad.Groups(),
-			"ad.users":        ad.Users(),
+			"ad.groups": ad.AdGroups(),
 		},
 		Config: func() provider.Config {
 			return &client.Config{}
