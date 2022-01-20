@@ -223,14 +223,17 @@ func buildAdGroupsMock(t *testing.T, ctrl *gomock.Controller) client.Services {
 	return services
 }
 
+func TestADGroups(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	services := buildAdGroupsMock(t, ctrl)
+	t.Fatal(services)
+	//client.MsgraphMockTestHelper(t, AdGroups(), buildAdGroupsMock, client.TestOptions{})
+}
+
 //
 //func TestADGroups(t *testing.T) {
-//	client.MsgraphMockTestHelper(t, AdGroups(), buildAdGroupsMock, client.TestOptions{})
+//	ADGroupsHelper(t, AdGroups(), createADGroupsTestServer, client.TestOptions{})
 //}
-
-func TestADGroups(t *testing.T) {
-	ADGroupsHelper(t, AdGroups(), createADGroupsTestServer, client.TestOptions{})
-}
 
 func ADGroupsHelper(t *testing.T, table *schema.Table, builder func(*testing.T) (*client.Services, error), options client.TestOptions) { //todo add example config
 	cfg := ""

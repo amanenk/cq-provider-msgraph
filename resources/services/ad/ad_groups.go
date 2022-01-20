@@ -35,32 +35,60 @@ func AdGroups() *schema.Table {
 					if !ok {
 						return fmt.Errorf("expected to have graph.Group but got %T", resource.Item)
 					}
-					data := p.GetAdditionalData()
-					resource.Set(c.Name, data)
+					data := p.DirectoryObject.GetAdditionalData()
+					return resource.Set(c.Name, data)
 				},
 			},
 			{
-				Name:        "entity_id",
+				Name:        "id",
 				Description: "Read-only.",
 				Type:        schema.TypeString,
-				Resolver:    schema.PathResolver("DirectoryObject.Entity.id"),
+				Resolver: func(ctx context.Context, meta schema.ClientMeta, resource *schema.Resource, c schema.Column) error {
+					p, ok := resource.Item.(graph.Group)
+					if !ok {
+						return fmt.Errorf("expected to have graph.Group but got %T", resource.Item)
+					}
+					data := p.DirectoryObject.GetId()
+					return resource.Set(c.Name, data)
+				},
 			},
 			{
-				Name:     "deleted_date_time",
-				Type:     schema.TypeTimestamp,
-				Resolver: schema.PathResolver("DirectoryObject.deletedDateTime"),
+				Name: "deleted_date_time",
+				Type: schema.TypeTimestamp,
+				Resolver: func(ctx context.Context, meta schema.ClientMeta, resource *schema.Resource, c schema.Column) error {
+					p, ok := resource.Item.(graph.Group)
+					if !ok {
+						return fmt.Errorf("expected to have graph.Group but got %T", resource.Item)
+					}
+					data := p.DirectoryObject.GetDeletedDateTime()
+					return resource.Set(c.Name, data)
+				},
 			},
 			{
 				Name:        "allow_external_senders",
 				Description: "Indicates if people external to the organization can send messages to the group",
 				Type:        schema.TypeBool,
-				Resolver:    schema.PathResolver("allowExternalSenders"),
+				Resolver: func(ctx context.Context, meta schema.ClientMeta, resource *schema.Resource, c schema.Column) error {
+					p, ok := resource.Item.(graph.Group)
+					if !ok {
+						return fmt.Errorf("expected to have graph.Group but got %T", resource.Item)
+					}
+					data := p.GetAllowExternalSenders()
+					return resource.Set(c.Name, data)
+				},
 			},
 			{
 				Name:        "auto_subscribe_new_members",
 				Description: "Indicates if new members added to the group will be auto-subscribed to receive email notifications",
 				Type:        schema.TypeBool,
-				Resolver:    schema.PathResolver("autoSubscribeNewMembers"),
+				Resolver: func(ctx context.Context, meta schema.ClientMeta, resource *schema.Resource, c schema.Column) error {
+					p, ok := resource.Item.(graph.Group)
+					if !ok {
+						return fmt.Errorf("expected to have graph.Group but got %T", resource.Item)
+					}
+					data := p.GetAutoSubscribeNewMembers()
+					return resource.Set(c.Name, data)
+				},
 			},
 			{
 				Name:        "calendar",
@@ -1655,7 +1683,18 @@ func AdGroups() *schema.Table {
 // ====================================================================================================================
 //                                               Table Resolver Functions
 // ====================================================================================================================
-
+func resolveMap(data map[string]func(interface{}, serialization.ParseNode) error) (map[string]interface{}, error) {
+	result := map[string]interface{}{}
+	for key, resolver := range data {
+		var value serialization.ParseNode
+		err := resolver(data, value)
+		if err != nil {
+			return nil, err
+		}
+		result[key] = value
+	}
+	return result, nil
+}
 func fetchAdGroups(ctx context.Context, meta schema.ClientMeta, parent *schema.Resource, res chan<- interface{}) error {
 	client := meta.(*client.Client)
 	svc := client.Services.Groups
@@ -1669,16 +1708,9 @@ func fetchAdGroups(ctx context.Context, meta schema.ClientMeta, parent *schema.R
 		return err
 	}
 	for {
-		group := result.GetValue()
+		value := result.GetValue()
+		res <- value
 
-		cast := make([]serialization.Parsable, len(group))
-		for i, v := range group {
-			temp := v
-			cast[i] = serialization.Parsable(&temp)
-			res <- cast[i]
-		}
-
-		res <- group
 		if result.GetNextLink() == nil {
 			break
 		}
